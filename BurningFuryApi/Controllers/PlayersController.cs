@@ -26,6 +26,74 @@ namespace BurningFuryApi.Controllers
         }
 
         /// <summary>
+        /// Updates an existing player in the BurningFury database
+        /// </summary>
+        /// <param name="id">The unique identifier of the player to update</param>
+        /// <param name="player">The player object with updated data</param>
+        /// <returns>The updated player</returns>
+        /// <response code="200">Returns the updated player</response>
+        /// <response code="400">If the player data is invalid</response>
+        /// <response code="401">If the user is not authenticated</response>
+        /// <response code="404">If the player is not found</response>
+        /// <response code="500">If there was an internal server error</response>
+        /// <remarks>
+        /// Sample request:
+        ///
+        ///     PUT /api/players/{id}
+        ///     {
+        ///        "region": "EU",
+        ///        "realm": "Silvermoon",
+        ///        "name": "UpdatedPlayerName"
+        ///     }
+        ///
+        /// </remarks>
+        [HttpPut("{id}")]
+        [ProducesResponseType(typeof(Player), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<Player>> UpdatePlayer(Guid id, [FromBody] Player player)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                _logger.LogInformation("User {UserId} attempting to update player {PlayerId}", userId, id);
+
+                if (id == Guid.Empty)
+                {
+                    return BadRequest("Invalid player id");
+                }
+
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+
+                if (string.IsNullOrWhiteSpace(player.Name) ||
+                    string.IsNullOrWhiteSpace(player.Region) ||
+                    string.IsNullOrWhiteSpace(player.Realm))
+                {
+                    return BadRequest("Name, Region, and Realm are required");
+                }
+
+                var updated = await _playerService.UpdatePlayerAsync(id, player);
+                if (updated == null)
+                {
+                    return NotFound($"Player with id {id} not found");
+                }
+
+                _logger.LogInformation("User {UserId} updated player {PlayerId}", userId, id);
+                return Ok(updated);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating player {PlayerId}", id);
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
+        /// <summary>
         /// Retrieves all players from the BurningFury database (Public endpoint - no authentication required)
         /// </summary>
         /// <returns>A list of all players</returns>

@@ -1,11 +1,12 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
+using BurningFuryApi.Authentication;
 
 namespace BurningFuryApi.Middleware
 {
     /// <summary>
-    /// Middleware for handling JWT authentication errors and providing better error responses
+    /// Middleware for handling authentication errors and providing better error responses (JWT or API Key)
     /// </summary>
     public class JwtErrorHandlingMiddleware
     {
@@ -33,11 +34,8 @@ namespace BurningFuryApi.Middleware
             // Handle authentication failures ONLY for endpoints that require authentication
             if (context.Response.StatusCode == 401)
             {
-                // Check if the endpoint allows anonymous access
                 var endpoint = context.GetEndpoint();
                 var allowAnonymous = endpoint?.Metadata?.GetMetadata<IAllowAnonymous>() != null;
-                
-                // Only handle 401 if the endpoint requires authentication
                 if (!allowAnonymous)
                 {
                     await HandleUnauthorizedAsync(context);
@@ -63,25 +61,42 @@ namespace BurningFuryApi.Middleware
 
         private static async Task HandleUnauthorizedAsync(HttpContext context)
         {
-            if (!context.Response.HasStarted)
-            {
-                context.Response.ContentType = "application/json";
-                
-                var response = new
-                {
-                    StatusCode = 401,
-                    Message = "Authentication failed. Please provide a valid JWT token.",
-                    Details = "The request requires authentication. Include a valid Bearer token in the Authorization header."
-                };
+            if (context.Response.HasStarted) return;
 
-                var jsonResponse = JsonSerializer.Serialize(response);
-                await context.Response.WriteAsync(jsonResponse);
+            context.Response.ContentType = "application/json";
+
+            var hasApiKey = context.Request.Headers.ContainsKey(ApiKeyAuthenticationHandler.HeaderName) ||
+                            context.Request.Query.ContainsKey("api_key");
+
+            string message;
+            string details;
+
+            if (hasApiKey)
+            {
+                // API key supplied but authentication failed
+                message = "Authentication failed. Invalid API Key or token.";
+                details = $"Provide a valid '{ApiKeyAuthenticationHandler.HeaderName}' header or a valid Bearer token in the Authorization header.";
             }
+            else
+            {
+                message = "Authentication required.";
+                details = $"Include either a Bearer token in the Authorization header or supply a '{ApiKeyAuthenticationHandler.HeaderName}' header.";
+            }
+
+            var response = new
+            {
+                StatusCode = 401,
+                Message = message,
+                Details = details
+            };
+
+            var jsonResponse = JsonSerializer.Serialize(response);
+            await context.Response.WriteAsync(jsonResponse);
         }
     }
 
     /// <summary>
-    /// Extension method to add JWT error handling middleware
+    /// Extension method to add authentication error handling middleware
     /// </summary>
     public static class JwtErrorHandlingMiddlewareExtensions
     {

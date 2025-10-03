@@ -170,6 +170,62 @@ namespace BurningFuryApi.Services
             }
         }
 
+        public async Task<Player?> UpdatePlayerAsync(Guid id, Player player)
+        {
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                using (var existsCmd = new NpgsqlCommand("SELECT COUNT(*) FROM Player WHERE Id = @id", connection))
+                {
+                    existsCmd.Parameters.AddWithValue("@id", id);
+                    var count = (long)await existsCmd.ExecuteScalarAsync();
+                    if (count == 0)
+                    {
+                        return null;
+                    }
+                }
+
+                using var updateCmd = new NpgsqlCommand("""
+                    UPDATE Player
+                    SET Region = @region,
+                        Realm = @realm,
+                        Name = @name,
+                        MainRaid = @mainRaid
+                    WHERE Id = @id
+                    RETURNING Id, Region, Realm, Name, MainRaid;
+                    """, connection);
+
+                updateCmd.Parameters.AddWithValue("@id", id);
+                updateCmd.Parameters.AddWithValue("@region", player.Region);
+                updateCmd.Parameters.AddWithValue("@realm", player.Realm);
+                updateCmd.Parameters.AddWithValue("@name", player.Name);
+                updateCmd.Parameters.AddWithValue("@mainRaid", player.MainRaid);
+
+                using var reader = await updateCmd.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var updated = new Player
+                    {
+                        Id = (Guid)reader["Id"],
+                        Region = (string)reader["Region"],
+                        Realm = (string)reader["Realm"],
+                        Name = (string)reader["Name"],
+                        MainRaid = (bool)reader["MainRaid"]
+                    };
+                    _logger.LogInformation("Player {PlayerId} updated", id);
+                    return updated;
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating player {PlayerId}", id);
+                throw;
+            }
+        }
+
         public async Task<bool> DeletePlayerAsync(Guid id)
         {
             try
