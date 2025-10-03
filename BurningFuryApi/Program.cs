@@ -6,6 +6,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Reflection;
 using System.Security.Claims;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +28,20 @@ try
 
     // Register PlayerService
     builder.Services.AddScoped<IPlayerService, PlayerService>();
+    // Register Feedback service + HttpClient
+    builder.Services.AddHttpClient<IFeedbackService, FeedbackService>();
+
+    // Rate limiting (10 feedback submissions per IP per hour)
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.AddFixedWindowLimiter("feedback", limiterOptions =>
+        {
+            limiterOptions.Window = TimeSpan.FromHours(1);
+            limiterOptions.PermitLimit = 10;
+            limiterOptions.QueueLimit = 0;
+            limiterOptions.AutoReplenishment = true;
+        });
+    });
 
     // Add Authentication with error handling
     if (!string.IsNullOrEmpty(auth0Settings?.Domain) && !string.IsNullOrEmpty(auth0Settings?.Audience))
@@ -248,6 +264,9 @@ try
 
     // Add CORS before authentication
     app.UseCors();
+
+    // Apply rate limiting
+    app.UseRateLimiter();
 
     app.UseAuthentication();
     app.UseAuthorization();
